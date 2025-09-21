@@ -406,6 +406,7 @@
                     ${event.description ? `<div class="popup-detail">${event.description}</div>` : ''}
                     ${event.note ? `<div class="popup-detail" style="color: #c9a55c; margin-top: 8px;">📝 ${event.note}</div>` : ''}
                     ${event.character ? `<div class="popup-detail"><span class="popup-label">Character:</span> ${event.character.replace(/_/g, ' ')}</div>` : ''}
+                    ${event.url ? `<div class="popup-detail" style="margin-top: 8px;"><a href="${event.url}" target="_blank" rel="noopener noreferrer" style="color: #4a9eff; text-decoration: none;">📖 More Information →</a></div>` : ''}
                 `;
                 marker.bindPopup(popupContent);
                 markers.push(marker);
@@ -479,4 +480,5 @@
         }
     </script>
 </body>
+
 </html>
