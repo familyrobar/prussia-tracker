@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prussia Campaign Tracker</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Georgia, serif; background: #1a1a1a; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        #header { background: linear-gradient(135deg, #2c3e50, #34495e); padding: 15px 20px; text-align: center; border-bottom: 3px solid #c9a55c; flex-shrink: 0; }
+        #header h1 { color: #c9a55c; font-size: 24px; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        #header p { color: #bdc3c7; font-style: italic; font-size: 14px; }
+        #controls { background: #2c3e50; border-bottom: 2px solid #34495e; flex-shrink: 0; transition: max-height 0.3s ease; overflow: hidden; }
+        #controls.collapsed { max-height: 45px !important; }
+        #controls:not(.collapsed) { max-height: 50vh; }
+        #controlsContent { padding: 20px; overflow-y: auto; }
+        #controls.collapsed #controlsContent { display: none; }
+        #toggleControls { width: 100%; background: #34495e; color: #c9a55c; border: none; padding: 8px; cursor: pointer; font-family: Georgia, serif; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        #toggleControls:hover { background: #415a77; }
+        .control-section { margin-bottom: 15px; }
+        .control-section h3 { color: #c9a55c; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.3s; font-family: Georgia, serif; }
+        .btn-primary { background: #c9a55c; color: #1a1a1a; }
+        .btn-primary:hover { background: #d4af6a; transform: translateY(-2px); }
+        .btn-secondary { background: #34495e; color: #e0e0e0; }
+        .btn-secondary:hover { background: #415a77; }
+        .btn-active { background: #27ae60; color: white; }
+        .timeline-controls { display: flex; align-items: center; gap: 15px; }
+        #timeSlider { flex: 1; height: 8px; border-radius: 4px; background: #34495e; outline: none; }
+        #timeSlider::-webkit-slider-thumb { appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #c9a55c; cursor: pointer; }
+        #currentDate { min-width: 150px; text-align: center; color: #c9a55c; font-weight: bold; }
+        #map { flex: 1; background: #000; position: relative; }
+        .data-input { margin-bottom: 15px; }
+        .data-input input { width: 100%; padding: 10px; background: #34495e; border: 1px solid #c9a55c; color: #e0e0e0; border-radius: 4px; font-family: Georgia, serif; }
+        .data-input label { display: block; margin-bottom: 5px; color: #c9a55c; font-size: 13px; }
+        #loadStatus { margin-top: 10px; padding: 10px; background: #34495e; border-radius: 4px; font-size: 12px; }
+        .status-success { color: #27ae60; }
+        .status-error { color: #e74c3c; }
+        .character-filter-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+        .char-filter-btn { padding: 6px 12px; font-size: 12px; }
+        .leaflet-popup-content-wrapper { background: #2c3e50; color: #e0e0e0; border-radius: 8px; }
+        .leaflet-popup-content { margin: 15px; font-family: Georgia, serif; }
+        .popup-title { color: #c9a55c; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
+        .popup-detail { margin: 5px 0; font-size: 13px; }
+        .popup-label { color: #95a5a6; font-weight: bold; }
+        .legend { background: rgba(44, 62, 80, 0.95); padding: 15px; border-radius: 8px; margin-top: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 12px; }
+        .legend-icon { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; }
+        #mapLegend { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(44, 62, 80, 0.95); padding: 10px; border-radius: 8px; max-width: 200px; display: none; }
+        #mapLegend h4 { color: #c9a55c; margin-bottom: 8px; font-size: 13px; }
+        .arrow { transition: transform 0.3s; }
+        .arrow.collapsed { transform: rotate(180deg); }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>Prussia Campaign Tracker (1805-1815)</h1>
+        <p>Data-Driven Multi-Book Timeline & Map Visualization</p>
+    </div>
+
+    <div id="controls">
+        <button id="toggleControls" onclick="toggleControls()">
+            <span class="arrow">▼</span>
+            <span id="toggleText">Hide Controls</span>
+            <span class="arrow">▼</span>
+        </button>
+        <div id="controlsContent">
+            <div class="control-section">
+                <h3>📚 Book Selection</h3>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="setDateRange('book1')">Book 1: Oct 1805 - Aug 1807</button>
+                    <button class="btn btn-secondary" onclick="setDateRange('book2')">Book 2: Sep 1807 - Oct 1809</button>
+                    <button class="btn btn-secondary" onclick="setDateRange('book3')">Book 3: Jan 1812 - Jan 1813</button>
+                    <button class="btn btn-secondary" onclick="setDateRange('book4')">Book 4: Feb 1813 - Aug 1815</button>
+                    <button class="btn btn-secondary" onclick="setDateRange('all')">All Events</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>🎭 Character Filters</h3>
+                <div id="characterFilters" class="character-filter-group"></div>
+            </div>
+
+            <div class="control-section">
+                <h3>📍 Event Types</h3>
+                <div class="btn-group">
+                    <button class="btn btn-active" onclick="toggleFilter('person')" id="filter-person">People</button>
+                    <button class="btn btn-active" onclick="toggleFilter('unit')" id="filter-unit">Units</button>
+                    <button class="btn btn-active" onclick="toggleFilter('battle')" id="filter-battle">Battles</button>
+                    <button class="btn btn-active" onclick="toggleFilter('treaty')" id="filter-treaty">Treaties</button>
+                    <button class="btn btn-active" onclick="toggleFilter('movement')" id="filter-movement">Paths</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>⏱️ Timeline</h3>
+                <div class="timeline-controls">
+                    <button class="btn btn-primary" id="playBtn" onclick="togglePlay()">▶ Play</button>
+                    <input type="range" id="timeSlider" min="0" max="100" value="0" oninput="updateTimeline(this.value)">
+                    <div id="currentDate">Loading...</div>
+                </div>
+            </div>
+
+            <div class="legend">
+                <h3>Legend</h3>
+                <div class="legend-item"><div class="legend-icon" style="background: #3498db;"></div><span>Person</span></div>
+                <div class="legend-item"><div class="legend-icon" style="background: #27ae60;"></div><span>Military Unit</span></div>
+                <div class="legend-item"><div class="legend-icon" style="background: #e74c3c;"></div><span>⚔️ Battle</span></div>
+                <div class="legend-item"><div class="legend-icon" style="background: #f39c12;"></div><span>📜 Treaty</span></div>
+                <div class="legend-item"><div style="width: 24px; height: 2px; background: #9b59b6;"></div><span>Path</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="map">
+        <div id="mapLegend">
+            <h4>Legend</h4>
+            <div class="legend-item"><div class="legend-icon" style="background: #3498db;"></div><span>Person</span></div>
+            <div class="legend-item"><div class="legend-icon" style="background: #27ae60;"></div><span>Unit</span></div>
+            <div class="legend-item"><div class="legend-icon" style="background: #e74c3c;"></div><span>Battle</span></div>
+            <div class="legend-item"><div class="legend-icon" style="background: #f39c12;"></div><span>Treaty</span></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Leaflet map
+        const campaignMap = L.map('map').setView([52.52, 13.405], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18
+        }).addTo(campaignMap);
+
+        // State variables
+        let eventsData = [];
+        let markers = [];
+        let paths = [];
+        let currentDateIndex = 0;
+        let isPlaying = false;
+        let playInterval;
+        let activeFilters = new Set(['person', 'unit', 'battle', 'treaty', 'movement']);
+        let activeCharacters = new Set();
+        let currentBookRange = { start: new Date('1805-10-01'), end: new Date('1807-08-31') };
+
+        const bookRanges = {
+            book1: { start: new Date('1805-10-01'), end: new Date('1807-08-31') },
+            book2: { start: new Date('1807-09-01'), end: new Date('1809-10-31') },
+            book3: { start: new Date('1812-01-01'), end: new Date('1813-01-31') },
+            book4: { start: new Date('1813-02-01'), end: new Date('1815-08-31') },
+            all: { start: new Date('1805-10-01'), end: new Date('1815-08-31') }
+        };
+
+        const iconConfig = {
+            person: { color: '#3498db', icon: '👤' },
+            unit: { color: '#27ae60', icon: '⚔️' },
+            battle: { color: '#e74c3c', icon: '⚔️' },
+            treaty: { color: '#f39c12', icon: '📜' }
+        };
+
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            const toggleText = document.getElementById('toggleText');
+            const arrows = document.querySelectorAll('.arrow');
+            const mapLegend = document.getElementById('mapLegend');
+            
+            controls.classList.toggle('collapsed');
+            arrows.forEach(arrow => arrow.classList.toggle('collapsed'));
+            
+            if (controls.classList.contains('collapsed')) {
+                toggleText.textContent = 'Show Controls';
+                mapLegend.style.display = 'block';
+            } else {
+                toggleText.textContent = 'Hide Controls';
+                mapLegend.style.display = 'none';
+            }
+            setTimeout(() => campaignMap.invalidateSize(), 350);
+        }
+
+        function createCustomIcon(type) {
+            const config = iconConfig[type] || iconConfig.person;
+            return L.divIcon({
+                html: `<div style="background: ${config.color}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; font-size: 16px;">${config.icon}</div>`,
+                className: '',
+                iconSize: [30, 30]
+            });
+        }
+
+        async function loadDataSource() {
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbx8RPy8tRiHkyyWyIzCKfXJe7wWPmEVzR4SphvM45POJU3RvaMqlBrEMX2wAV__--7Heg/exec';
+            
+            console.log('Attempting to load data from:', webAppUrl);
+            
+            try {
+                console.log('Method 1: Direct fetch...');
+                const response = await fetch(webAppUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'omit',
+                    redirect: 'follow'
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                const text = await response.text();
+                console.log('Response text (first 200 chars):', text.substring(0, 200));
+                
+                const data = JSON.parse(text);
+                
+                if (!data.events || !Array.isArray(data.events)) {
+                    throw new Error('Invalid data format received');
+                }
+                
+                eventsData = data.events;
+                console.log(`✅ Loaded ${eventsData.length} events successfully`);
+                initializeData();
+                
+            } catch (error) {
+                console.error('Direct fetch failed:', error);
+                console.log('Trying alternative loading method...');
+                
+                // Try loading via dynamic script tag (JSONP-style)
+                loadViaScript(webAppUrl);
+            }
+        }
+
+        function loadViaScript(url) {
+            console.log('Method 2: Script injection...');
+            
+            // Create a global callback
+            window.handleCampaignData = function(data) {
+                console.log('Callback received data');
+                if (data && data.events) {
+                    eventsData = data.events;
+                    console.log(`✅ Loaded ${eventsData.length} events via script injection`);
+                    initializeData();
+                    // Clean up
+                    delete window.handleCampaignData;
+                } else {
+                    console.error('Invalid data received in callback');
+                    showError('Invalid data format received from server');
+                }
+            };
+
+            const script = document.createElement('script');
+            script.src = url;
+            script.onerror = (err) => {
+                console.error('Script injection failed:', err);
+                showError('Unable to load data. The Google Apps Script may not be publicly accessible.');
+            };
+            script.onload = () => {
+                console.log('Script loaded, waiting for callback...');
+                // If callback hasn't fired after 3 seconds, show error
+                setTimeout(() => {
+                    if (eventsData.length === 0) {
+                        console.error('Script loaded but no data received');
+                        showError('Script loaded but data not accessible. Check Apps Script deployment settings.');
+                    }
+                }, 3000);
+            };
+            document.body.appendChild(script);
+        }
+
+        function showError(message) {
+            console.error('Showing error:', message);
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #e74c3c; color: white; padding: 20px; border-radius: 8px; z-index: 10000; text-align: center; max-width: 500px; font-family: Georgia, serif;';
+            errorDiv.innerHTML = `
+                <h3 style="margin-bottom: 10px;">Failed to Load Data</h3>
+                <p style="margin-bottom: 15px;">${message}</p>
+                <p style="font-size: 12px; margin-bottom: 15px;">Check the browser console (F12) for detailed error messages.</p>
+                <button onclick="location.reload()" style="background: white; color: #e74c3c; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-family: Georgia, serif; font-weight: bold;">Reload Page</button>
+            `;
+            document.body.appendChild(errorDiv);
+        }
+
+        // Auto-load data on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, starting data load...');
+            loadDataSource();
+        });
+
+        // Fallback: Load via JSONP/script injection
+        function loadViaJSONP(url) {
+            window.handleSheetData = function(data) {
+                if (data && data.events) {
+                    eventsData = data.events;
+                    console.log(`✅ Loaded ${eventsData.length} events via JSONP`);
+                    initializeData();
+                } else {
+                    showError('Invalid data format received');
+                }
+            };
+
+            const script = document.createElement('script');
+            script.src = url + '?callback=handleSheetData';
+            script.onerror = () => {
+                showError('Failed to load data. Please check your internet connection and refresh the page.');
+            };
+            document.body.appendChild(script);
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #e74c3c; color: white; padding: 20px; border-radius: 8px; z-index: 10000; text-align: center; max-width: 400px;';
+            errorDiv.innerHTML = `
+                <h3 style="margin-bottom: 10px;">Failed to Load Data</h3>
+                <p style="margin-bottom: 15px;">${message}</p>
+                <button onclick="location.reload()" style="background: white; color: #e74c3c; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-family: Georgia, serif;">Reload Page</button>
+            `;
+            document.body.appendChild(errorDiv);
+        }
+
+        // Auto-load data on page load
+        window.addEventListener('DOMContentLoaded', loadDataSource);
+
+        function initializeData() {
+            const characters = new Set();
+            eventsData.forEach(event => { if (event.character) characters.add(event.character); });
+            
+            const filterContainer = document.getElementById('characterFilters');
+            filterContainer.innerHTML = '';
+            
+            Array.from(characters).sort().forEach(char => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-active char-filter-btn';
+                btn.textContent = char.replace(/_/g, ' ');
+                btn.onclick = () => toggleCharacterFilter(char, btn);
+                btn.id = `char-${char}`;
+                filterContainer.appendChild(btn);
+                activeCharacters.add(char);
+            });
+
+            updateMap();
+            updateTimelineDisplay();
+        }
+
+        function toggleCharacterFilter(character, button) {
+            if (activeCharacters.has(character)) {
+                activeCharacters.delete(character);
+                button.classList.remove('btn-active');
+                button.classList.add('btn-secondary');
+            } else {
+                activeCharacters.add(character);
+                button.classList.remove('btn-secondary');
+                button.classList.add('btn-active');
+            }
+            updateMap();
+        }
+
+        function getFilteredEvents() {
+            return eventsData.filter(event => {
+                const eventDate = new Date(event.date);
+                const inDateRange = eventDate >= currentBookRange.start && eventDate <= currentBookRange.end;
+                const inTypeFilter = activeFilters.has(event.type);
+                const inCharFilter = !event.character || activeCharacters.has(event.character);
+                return inDateRange && inTypeFilter && inCharFilter;
+            }).sort((a, b) => new Date(a.date) - new Date(b.date));
+        }
+
+        function updateMap() {
+            markers.forEach(m => campaignMap.removeLayer(m));
+            paths.forEach(p => campaignMap.removeLayer(p));
+            markers = [];
+            paths = [];
+
+            const filteredEvents = getFilteredEvents();
+            
+            if (activeFilters.has('movement')) {
+                const personMovements = {};
+                filteredEvents.filter(e => e.type === 'person' && e.previousLocation).forEach(event => {
+                    if (!personMovements[event.name]) personMovements[event.name] = [];
+                    personMovements[event.name].push(event);
+                });
+
+                Object.values(personMovements).forEach(movements => {
+                    for (let i = 1; i < movements.length; i++) {
+                        const prev = movements[i-1];
+                        const curr = movements[i];
+                        if (prev.lat && prev.lng && curr.lat && curr.lng) {
+                            const path = L.polyline(
+                                [[prev.lat, prev.lng], [curr.lat, curr.lng]],
+                                { color: '#9b59b6', weight: 2, opacity: 0.6, dashArray: '5, 10' }
+                            ).addTo(campaignMap);
+                            paths.push(path);
+                        }
+                    }
+                });
+            }
+
+            filteredEvents.forEach((event, index) => {
+                if (!event.lat || !event.lng) return;
+                const marker = L.marker([event.lat, event.lng], {
+                    icon: createCustomIcon(event.type),
+                    opacity: index <= currentDateIndex ? 1 : 0.3
+                }).addTo(campaignMap);
+
+                const popupContent = `
+                    <div class="popup-title">${event.name || event.location}</div>
+                    <div class="popup-detail"><span class="popup-label">Date:</span> ${new Date(event.date).toLocaleDateString()}</div>
+                    <div class="popup-detail"><span class="popup-label">Type:</span> ${event.type}</div>
+                    <div class="popup-detail"><span class="popup-label">Location:</span> ${event.location}</div>
+                    ${event.description ? `<div class="popup-detail">${event.description}</div>` : ''}
+                    ${event.note ? `<div class="popup-detail" style="color: #c9a55c; margin-top: 8px;">📝 ${event.note}</div>` : ''}
+                    ${event.character ? `<div class="popup-detail"><span class="popup-label">Character:</span> ${event.character.replace(/_/g, ' ')}</div>` : ''}
+                `;
+                marker.bindPopup(popupContent);
+                markers.push(marker);
+            });
+        }
+
+        function setDateRange(book) {
+            currentBookRange = bookRanges[book];
+            currentDateIndex = 0;
+            document.querySelectorAll('.control-section:nth-child(2) .btn').forEach(btn => {
+                btn.className = 'btn btn-secondary';
+            });
+            event.target.className = 'btn btn-primary';
+            updateMap();
+            updateTimelineDisplay();
+        }
+
+        function toggleFilter(type) {
+            if (activeFilters.has(type)) {
+                activeFilters.delete(type);
+                document.getElementById(`filter-${type}`).classList.remove('btn-active');
+                document.getElementById(`filter-${type}`).classList.add('btn-secondary');
+            } else {
+                activeFilters.add(type);
+                document.getElementById(`filter-${type}`).classList.remove('btn-secondary');
+                document.getElementById(`filter-${type}`).classList.add('btn-active');
+            }
+            updateMap();
+        }
+
+        function updateTimeline(value) {
+            const filteredEvents = getFilteredEvents();
+            currentDateIndex = Math.floor((value / 100) * Math.max(0, filteredEvents.length - 1));
+            updateMap();
+            updateTimelineDisplay();
+        }
+
+        function updateTimelineDisplay() {
+            const filteredEvents = getFilteredEvents();
+            if (filteredEvents.length > 0 && currentDateIndex < filteredEvents.length) {
+                const currentEvent = filteredEvents[currentDateIndex];
+                document.getElementById('currentDate').textContent = new Date(currentEvent.date).toLocaleDateString('en-US', { 
+                    year: 'numeric', month: 'short', day: 'numeric' 
+                });
+            } else {
+                document.getElementById('currentDate').textContent = 'No events';
+            }
+        }
+
+        function togglePlay() {
+            const button = document.getElementById('playBtn');
+            if (isPlaying) {
+                clearInterval(playInterval);
+                button.textContent = '▶ Play';
+                isPlaying = false;
+            } else {
+                button.textContent = '⏸ Pause';
+                isPlaying = true;
+                playInterval = setInterval(() => {
+                    const filteredEvents = getFilteredEvents();
+                    if (currentDateIndex < filteredEvents.length - 1) {
+                        currentDateIndex++;
+                        document.getElementById('timeSlider').value = (currentDateIndex / (filteredEvents.length - 1)) * 100;
+                        updateMap();
+                        updateTimelineDisplay();
+                    } else {
+                        togglePlay();
+                    }
+                }, 1000);
+            }
+        }
+    </script>
+</body>
+</html>
